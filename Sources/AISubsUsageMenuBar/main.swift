@@ -149,6 +149,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// plans) — at startup and on manual Refresh, not on the 60 s timer.
     private func refresh(full: Bool) {
         guard !isLoading else { return }
+        #if DEMO // local screenshot build only (scripts/capture, not in the repo)
+        if DemoData.isEnabled {
+            (claudeAccounts, openAI, figmaAccounts) = DemoData.accounts()
+            openAIError = nil
+            lastUpdated = Date()
+            render()
+            return
+        }
+        #endif
         isLoading = true
         Task { @MainActor in
             async let oTask: (OpenAIClient.Result?, String?) = {
