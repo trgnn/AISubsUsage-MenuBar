@@ -29,7 +29,7 @@ private enum Entry {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var timer: Timer?
     private var openAI: OpenAIClient.Result?
@@ -38,6 +38,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var openAIError: String?
     private var lastUpdated: Date?
     private var isLoading = false
+
+    // While the menu is open, changes update it in place (rebuilding would
+    // close it); it is rebuilt from scratch when it closes.
+    private var menuIsOpen = false
+    private weak var accountsMenu: NSMenu?
+    private weak var refreshItem: NSMenuItem?
+    private let sectionTag = 1 // the single item holding all account sections
+    /// Accounts with a section in the menu as last built. While the menu is
+    /// open its height must not change (macOS would leave the open row's
+    /// highlight behind): hiding dims a section, un-hiding one that isn't
+    /// there waits for the next open.
+    private var builtSectionKeys: [String] = []
 
     private let showIconsKey = "showIcons"
     private let hiddenKey = "hiddenAccounts"
@@ -201,7 +213,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return (provider == prevProvider ? nil : icon, text)
         }
         btn.attributedTitle = joinSegments(segs)
-        statusItem.menu = buildMenu(loading: false)
+        if menuIsOpen, let menu = statusItem.menu {
+            updateOpenMenu(menu)
+        } else {
+            statusItem.menu = buildMenu(loading: false)
+        }
+    }
+
+    /// Open menu: swap the account sections, follow the Accounts ▸ order,
+    /// refresh the "updated …" line. Items the user may be hovering (Display,
+    /// Accounts and their submenus) stay in place so nothing collapses.
+    private func updateOpenMenu(_ menu: NSMenu) {
+        // All sections live in one item's view: swapping that view never
+        // shifts the menu's items, so the hovered row stays right.
+        if let sections = menu.items.first(where: { $0.tag == sectionTag }), let stack = sections.view {
+            let fresh = sectionsView(loading: false, keeping: builtSectionKeys)
+            if texts(in: fresh) != texts(in: stack) {
+                // Same container, new rows: the menu keeps its item and just
+                // resizes; a full redraw clears what the old rows left behind.
+                stack.subviews.forEach { $0.removeFromSuperview() }
+                fresh.subviews.forEach { stack.addSubview($0) }
+                stack.setFrameSize(fresh.frame.size)
+                menu.itemChanged(sections)
+                stack.window?.contentView?.needsDisplay = true
+                stack.window?.displayIfNeeded()
+            }
+        }
+        refreshItem?.title = refreshTitle()
+        guard let accountsMenu else { return }
+        let keys = listedEntries().map(\.key)
+        for item in accountsMenu.items {
+            guard let key = item.representedObject as? String, let pos = keys.firstIndex(of: key) else { continue }
+            for row in item.submenu?.items.compactMap({ $0.view as? ActionRowView }) ?? [] {
+                if row.identifier == moveUpID { row.isEnabled = pos > 0 }
+                if row.identifier == moveDownID { row.isEnabled = pos < keys.count - 1 }
+            }
+        }
+    }
+
+    /// Every label in a view tree, to tell whether the sections changed.
+    private func texts(in view: NSView) -> [String] {
+        let own = (view as? NSTextField).map { [$0.stringValue] } ?? []
+        return own + (view.alphaValue < 1 ? ["(dimmed)"] : []) + view.subviews.flatMap(texts)
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        if menu === statusItem.menu { menuIsOpen = true }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        guard menu === statusItem.menu else { return }
+        menuIsOpen = false
+        statusItem.menu = buildMenu(loading: isLoading && lastUpdated == nil)
     }
 
     /// Menubar value: 5-hour bucket when present, otherwise whatever limit
@@ -241,7 +304,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return "Refresh now · updated \(f.localizedString(for: updated, relativeTo: Date()))"
     }
 
-    private func buildMenu(loading: Bool) -> NSMenu {
+    /// Account section rows at the top of the dropdown (stacked by sectionsView).
+    /// `keeping`: open-menu update — exactly these accounts, hidden ones dimmed.
+    private func sectionItems(loading: Bool, keeping: [String]? = nil) -> [NSMenuItem] {
         let menu = NSMenu()
 
         // Providers with no account yet (first load) get a placeholder section.
@@ -257,7 +322,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // One section per account in user order, headed by its provider icon
         // and name (no separators between sections). Hidden accounts simply
         // have no section (still listed in Accounts ▸).
-        for e in orderedEntries() where !isHiddenFromDropdown(e.key) {
+        let shown = orderedEntries().filter { keeping?.contains($0.key) ?? !isHiddenFromDropdown($0.key) }
+        if keeping == nil { builtSectionKeys = shown.map(\.key) }
+        for e in shown {
+            let first = menu.items.count
+            defer {
+                if isHiddenFromDropdown(e.key) { menu.items[first...].forEach { $0.view?.alphaValue = 0.35 } }
+            }
             menu.addItem(header(entryTitle(e), provider: e.provider))
             switch e {
             case .claude(let a):
@@ -295,36 +366,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        let items = menu.items
+        menu.removeAllItems()
+        return items
+    }
+
+    /// All section rows stacked in one view (one menu item).
+    private func sectionsView(loading: Bool, keeping: [String]? = nil) -> NSView {
+        // Detach each row from its temporary menu item before re-parenting it.
+        let rows = sectionItems(loading: loading, keeping: keeping).compactMap { item -> NSView? in
+            let view = item.view
+            item.view = nil
+            return view
+        }
+        let width = rows.map(\.frame.width).max() ?? 0
+        let stack = FlippedView(frame: NSRect(x: 0, y: 0, width: width, height: rows.map(\.frame.height).reduce(0, +)))
+        stack.autoresizingMask = [.width]
+        var y: CGFloat = 0
+        for row in rows {
+            row.frame = NSRect(x: 0, y: y, width: width, height: row.frame.height)
+            row.autoresizingMask = [.width, .maxYMargin] // pinned to the top
+            stack.addSubview(row)
+            y += row.frame.height
+        }
+        return stack
+    }
+
+    private func buildMenu(loading: Bool) -> NSMenu {
+        let menu = NSMenu()
+        menu.delegate = self
+        let sections = NSMenuItem()
+        sections.view = sectionsView(loading: loading)
+        sections.tag = sectionTag
+        menu.addItem(sections)
         menu.addItem(.separator())
 
         // Options
-        let login = NSMenuItem(title: "Open at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
-        login.target = self
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(login)
+        menu.addItem(ActionRowView.item("Open at Login", isOn: SMAppService.mainApp.status == .enabled) { [weak self] row in
+            self?.toggleLoginItem(row)
+        })
 
         // Display options, each individually toggleable — same pattern as Accounts ▸.
         let displayItem = NSMenuItem(title: "Display", action: nil, keyEquivalent: "")
         let displayMenu = NSMenu()
-        let icons = NSMenuItem(title: "Show provider icons", action: #selector(toggleIcons), keyEquivalent: "")
-        icons.target = self
-        icons.state = showIcons ? .on : .off
-        displayMenu.addItem(icons)
-
-        let percent = NSMenuItem(title: "Show % signs", action: #selector(togglePercent), keyEquivalent: "")
-        percent.target = self
-        percent.state = showPercent ? .on : .off
-        displayMenu.addItem(percent)
-
-        let empty = NSMenuItem(title: "Show empty accounts", action: #selector(toggleEmpty), keyEquivalent: "")
-        empty.target = self
-        empty.state = showEmptyAccounts ? .on : .off
-        displayMenu.addItem(empty)
-
-        let separators = NSMenuItem(title: "Wide separators", action: #selector(toggleSeparators), keyEquivalent: "")
-        separators.target = self
-        separators.state = wideSeparators ? .on : .off
-        displayMenu.addItem(separators)
+        displayMenu.addItem(settingRow("Show provider icons", \.showIcons))
+        displayMenu.addItem(settingRow("Show % signs", \.showPercent))
+        displayMenu.addItem(settingRow("Show empty accounts", \.showEmptyAccounts))
+        displayMenu.addItem(settingRow("Wide separators", \.wideSeparators))
         displayItem.submenu = displayMenu
         menu.addItem(displayItem)
 
@@ -333,6 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Move Up/Down (this list always shows every account, in user order).
         let accountsItem = NSMenuItem(title: "Accounts", action: nil, keyEquivalent: "")
         let accountsMenu = NSMenu()
+        self.accountsMenu = accountsMenu
         let listed = listedEntries()
         for (i, e) in listed.enumerated() {
             let item = accountItem(title: entryTitle(e), key: e.key,
@@ -346,6 +435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let refresh = NSMenuItem(title: refreshTitle(), action: #selector(doRefresh), keyEquivalent: "r")
         refresh.target = self
+        refreshItem = refresh
         menu.addItem(refresh)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit", action: #selector(doQuit), keyEquivalent: "q")
@@ -408,66 +498,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return " (\(Formatters.planName(plan)))"
     }
 
+    private let moveUpID = NSUserInterfaceItemIdentifier("moveUp")
+    private let moveDownID = NSUserInterfaceItemIdentifier("moveDown")
+
     private func accountItem(title: String, key: String, canMoveUp: Bool, canMoveDown: Bool) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.representedObject = key
         let submenu = NSMenu()
-        submenu.autoenablesItems = false // Move Up/Down greyed at the ends
-        submenu.addItem(surfaceToggle("Show in dropdown", key: key,
-                                      action: #selector(toggleDropdownAccount),
-                                      shown: !isHiddenFromDropdown(key)))
-        submenu.addItem(surfaceToggle("Show in menu bar", key: key,
-                                      action: #selector(toggleBarAccount),
-                                      shown: !isHiddenFromBar(key)))
+        submenu.addItem(ActionRowView.item("Show in dropdown", isOn: !isHiddenFromDropdown(key)) { [weak self] row in
+            guard let self else { return }
+            var hidden = hiddenFromDropdown
+            toggle(key, in: &hidden)
+            hiddenFromDropdown = hidden
+            row.isOn = !hidden.contains(key)
+            render()
+        })
+        submenu.addItem(ActionRowView.item("Show in menu bar", isOn: !isHiddenFromBar(key)) { [weak self] row in
+            guard let self else { return }
+            var hidden = hiddenFromBar
+            toggle(key, in: &hidden)
+            hiddenFromBar = hidden
+            row.isOn = !hidden.contains(key)
+            render()
+        })
         submenu.addItem(.separator())
-        submenu.addItem(moveItem("Move Up", key: key, action: #selector(moveAccountUp), enabled: canMoveUp))
-        submenu.addItem(moveItem("Move Down", key: key, action: #selector(moveAccountDown), enabled: canMoveDown))
+        let up = ActionRowView.item("Move Up") { [weak self] _ in self?.moveAccount(key, by: -1) }
+        up.view?.identifier = moveUpID
+        (up.view as? ActionRowView)?.isEnabled = canMoveUp
+        submenu.addItem(up)
+        let down = ActionRowView.item("Move Down") { [weak self] _ in self?.moveAccount(key, by: 1) }
+        down.view?.identifier = moveDownID
+        (down.view as? ActionRowView)?.isEnabled = canMoveDown
+        submenu.addItem(down)
         item.submenu = submenu
         return item
     }
 
-    private func moveItem(_ title: String, key: String, action: Selector, enabled: Bool) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = self
-        item.representedObject = key
-        item.isEnabled = enabled
-        return item
-    }
-
-    @objc private func moveAccountUp(_ sender: NSMenuItem) { moveAccount(sender, by: -1) }
-    @objc private func moveAccountDown(_ sender: NSMenuItem) { moveAccount(sender, by: 1) }
-
     /// Swaps with the neighbour in the Accounts ▸ list. Saved keys of accounts
     /// absent right now (failed fetch, logged out) keep their place at the end.
-    private func moveAccount(_ sender: NSMenuItem, by offset: Int) {
-        guard let key = sender.representedObject as? String,
-              let order = AccountOrder.moving(key, by: offset, in: listedEntries().map(\.key), saved: accountOrder)
+    /// In the open menu the neighbour moves, not this item, so the submenu the
+    /// user is clicking in stays open.
+    private func moveAccount(_ key: String, by offset: Int) {
+        guard let order = AccountOrder.moving(key, by: offset, in: listedEntries().map(\.key), saved: accountOrder)
         else { return }
         accountOrder = order
+        if menuIsOpen, let accountsMenu,
+           let i = accountsMenu.items.firstIndex(where: { $0.representedObject as? String == key }),
+           accountsMenu.items.indices.contains(i + offset)
+        {
+            let neighbour = accountsMenu.items[i + offset]
+            accountsMenu.removeItem(neighbour)
+            accountsMenu.insertItem(neighbour, at: i)
+        }
         render()
     }
 
-    private func surfaceToggle(_ title: String, key: String, action: Selector, shown: Bool) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = self
-        item.state = shown ? .on : .off
-        item.representedObject = key
-        return item
-    }
-
-    @objc private func toggleDropdownAccount(_ sender: NSMenuItem) {
-        guard let key = sender.representedObject as? String else { return }
-        var hidden = hiddenFromDropdown
-        toggle(key, in: &hidden)
-        hiddenFromDropdown = hidden
-        render()
-    }
-
-    @objc private func toggleBarAccount(_ sender: NSMenuItem) {
-        guard let key = sender.representedObject as? String else { return }
-        var hidden = hiddenFromBar
-        toggle(key, in: &hidden)
-        hiddenFromBar = hidden
-        render()
+    /// Display ▸ checkbox bound to a setting; stays open after a click.
+    private func settingRow(_ title: String, _ setting: ReferenceWritableKeyPath<AppDelegate, Bool>) -> NSMenuItem {
+        ActionRowView.item(title, isOn: self[keyPath: setting]) { [weak self] row in
+            guard let self else { return }
+            self[keyPath: setting].toggle()
+            row.isOn = self[keyPath: setting]
+            render()
+        }
     }
 
     /// " [icon] text" for menubar buttons (white pre-rendered glyphs).
@@ -490,27 +583,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func doRefresh() { refresh(full: true) }
     @objc private func doQuit() { NSApplication.shared.terminate(nil) }
 
-    @objc private func toggleIcons() {
-        showIcons.toggle()
-        render()
-    }
-
-    @objc private func togglePercent() {
-        showPercent.toggle()
-        render()
-    }
-
-    @objc private func toggleEmpty() {
-        showEmptyAccounts.toggle()
-        render()
-    }
-
-    @objc private func toggleSeparators() {
-        wideSeparators.toggle()
-        render()
-    }
-
-    @objc private func toggleLoginItem() {
+    private func toggleLoginItem(_ row: ActionRowView) {
         do {
             if SMAppService.mainApp.status == .enabled {
                 try SMAppService.mainApp.unregister()
@@ -521,6 +594,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Keep the menu truthful on failure (e.g. ad-hoc signature rejected).
             NSSound.beep()
         }
+        row.isOn = SMAppService.mainApp.status == .enabled
         render()
     }
 }
@@ -557,3 +631,8 @@ let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
 app.run()
+
+/// Top-down layout for stacked menu rows.
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
