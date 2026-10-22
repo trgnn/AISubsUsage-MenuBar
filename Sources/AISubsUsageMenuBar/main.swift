@@ -536,8 +536,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Swaps with the neighbour in the Accounts ▸ list. Saved keys of accounts
     /// absent right now (failed fetch, logged out) keep their place at the end.
-    /// In the open menu the neighbour moves, not this item, so the submenu the
-    /// user is clicking in stays open.
+    /// In the open menu the two rows swap contents rather than positions:
+    /// removing and re-inserting an item left a stale white "selected" title.
     private func moveAccount(_ key: String, by offset: Int) {
         guard let order = AccountOrder.moving(key, by: offset, in: listedEntries().map(\.key), saved: accountOrder)
         else { return }
@@ -546,9 +546,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
            let i = accountsMenu.items.firstIndex(where: { $0.representedObject as? String == key }),
            accountsMenu.items.indices.contains(i + offset)
         {
-            let neighbour = accountsMenu.items[i + offset]
-            accountsMenu.removeItem(neighbour)
-            accountsMenu.insertItem(neighbour, at: i)
+            let a = accountsMenu.items[i], b = accountsMenu.items[i + offset]
+            let (title, image, key, submenu) = (a.title, a.image, a.representedObject, a.submenu)
+            let other = b.submenu
+            a.submenu = nil // a menu can belong to one item at a time
+            b.submenu = nil
+            (a.title, a.image, a.representedObject, a.submenu) = (b.title, b.image, b.representedObject, other)
+            (b.title, b.image, b.representedObject, b.submenu) = (title, image, key, submenu)
         }
         render()
     }
