@@ -6,7 +6,5 @@ xcuserdata/
 .DS_Store
 CLAUDE.md
 # Local screenshot tooling (docs/CAPTURE.md)
-.build-demo/
 docs/CAPTURE.md
 scripts/capture/
-Sources/AISubsUsageMenuBar/DemoData.swift

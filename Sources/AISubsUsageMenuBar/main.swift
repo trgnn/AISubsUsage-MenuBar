@@ -38,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var openAIError: String?
     private var lastUpdated: Date?
     private var isLoading = false
+    /// Real settings, or the separate demo ones (`--demo`).
+    private let defaults: UserDefaults = DemoData.isEnabled ? DemoData.settings : .standard
 
     // While the menu is open, changes update it in place (rebuilding would
     // close it); it is rebuilt from scratch when it closes.
@@ -62,38 +64,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// On by default (missing key counts as enabled).
     private var showIcons: Bool {
-        get { UserDefaults.standard.object(forKey: showIconsKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: showIconsKey) }
+        get { defaults.object(forKey: showIconsKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: showIconsKey) }
     }
 
     /// Display levers (all on = classic mode; all off ≈ legacy compact).
     /// Each individually toggleable via Display ▸.
     private var showPercent: Bool {
-        get { UserDefaults.standard.object(forKey: showPercentKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: showPercentKey) }
+        get { defaults.object(forKey: showPercentKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: showPercentKey) }
     }
 
     private var showEmptyAccounts: Bool {
-        get { UserDefaults.standard.object(forKey: showEmptyKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: showEmptyKey) }
+        get { defaults.object(forKey: showEmptyKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: showEmptyKey) }
     }
 
     private var wideSeparators: Bool {
-        get { UserDefaults.standard.object(forKey: wideSeparatorsKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: wideSeparatorsKey) }
+        get { defaults.object(forKey: wideSeparatorsKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: wideSeparatorsKey) }
     }
 
     /// Account keys ("claude:…", "openai", "figma:…") hidden from the dropdown
     /// sections via Accounts ▸. Independent of the menubar.
     private var hiddenFromDropdown: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: hiddenKey) ?? []) }
-        set { UserDefaults.standard.set(Array(newValue), forKey: hiddenKey) }
+        get { Set(defaults.stringArray(forKey: hiddenKey) ?? []) }
+        set { defaults.set(Array(newValue), forKey: hiddenKey) }
     }
 
     /// Account keys hidden from the menubar via Accounts ▸. Independent of the dropdown.
     private var hiddenFromBar: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: hiddenFromBarKey) ?? []) }
-        set { UserDefaults.standard.set(Array(newValue), forKey: hiddenFromBarKey) }
+        get { Set(defaults.stringArray(forKey: hiddenFromBarKey) ?? []) }
+        set { defaults.set(Array(newValue), forKey: hiddenFromBarKey) }
     }
 
     private func isHiddenFromDropdown(_ key: String) -> Bool { hiddenFromDropdown.contains(key) }
@@ -106,8 +108,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Account keys in user order (Accounts ▸ Move Up/Down), shared by the
     /// menubar, the dropdown sections and the Accounts list.
     private var accountOrder: [String] {
-        get { UserDefaults.standard.stringArray(forKey: orderKey) ?? [] }
-        set { UserDefaults.standard.set(newValue, forKey: orderKey) }
+        get { defaults.stringArray(forKey: orderKey) ?? [] }
+        set { defaults.set(newValue, forKey: orderKey) }
     }
 
     /// Every account, saved order first; unknown (new) accounts keep the
@@ -127,15 +129,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// One-time: before the split, hiding an account hid it everywhere.
     private func migrateHiddenAccounts() {
-        guard UserDefaults.standard.object(forKey: hiddenFromBarKey) == nil else { return }
+        guard defaults.object(forKey: hiddenFromBarKey) == nil else { return }
         hiddenFromBar = hiddenFromDropdown
     }
 
     /// One-time: legacy Compact mode on → the three levers off.
     private func migrateLegacyCompact() {
-        defer { UserDefaults.standard.removeObject(forKey: legacyCompactKey) }
-        guard UserDefaults.standard.object(forKey: legacyCompactKey) as? Bool == true,
-              UserDefaults.standard.object(forKey: showPercentKey) == nil
+        defer { defaults.removeObject(forKey: legacyCompactKey) }
+        guard defaults.object(forKey: legacyCompactKey) as? Bool == true,
+              defaults.object(forKey: showPercentKey) == nil
         else { return }
         showPercent = false
         showEmptyAccounts = false
@@ -161,7 +163,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// plans) — at startup and on manual Refresh, not on the 60 s timer.
     private func refresh(full: Bool) {
         guard !isLoading else { return }
-        #if DEMO // local screenshot build only (scripts/capture, not in the repo)
         if DemoData.isEnabled {
             (claudeAccounts, openAI, figmaAccounts) = DemoData.accounts()
             openAIError = nil
@@ -169,7 +170,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             render()
             return
         }
-        #endif
         isLoading = true
         Task { @MainActor in
             async let oTask: (OpenAIClient.Result?, String?) = {
@@ -588,6 +588,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func doQuit() { NSApplication.shared.terminate(nil) }
 
     private func toggleLoginItem(_ row: ActionRowView) {
+        // Demo mode: the checkmark flips for the camera, the real login item doesn't.
+        if DemoData.isEnabled { row.isOn?.toggle(); return }
         do {
             if SMAppService.mainApp.status == .enabled {
                 try SMAppService.mainApp.unregister()

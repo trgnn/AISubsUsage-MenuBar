@@ -93,3 +93,22 @@ import Testing
         #expect(FlexibleDate.parse(nil) == nil)
     }
 }
+
+@Suite struct DemoMode {
+    @Test func offWithoutFlag() {
+        #expect(!DemoData.isEnabled) // test runner isn't launched with --demo
+    }
+
+    @Test func onlyMadeUpAccounts() {
+        let (claude, openAI, figma) = DemoData.accounts()
+        let names = claude.map(\.displayName) + figma.map(\.displayName) + [openAI.email ?? ""]
+        for name in names where name.contains("@") {
+            #expect(name.contains("@example.com"), "\(name)")
+        }
+        #expect(!claude.isEmpty && !figma.isEmpty && !openAI.buckets.isEmpty)
+    }
+
+    @Test func separateSettingsDomain() {
+        #expect(DemoData.settings != UserDefaults.standard)
+    }
+}
