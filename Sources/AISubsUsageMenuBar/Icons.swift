@@ -1,6 +1,6 @@
 import AppKit
 
-// Bundled pre-rendered white glyphs (Resources/*.png):
+// Bundled pre-rendered white glyphs (Assets/*.png, copied into the .app):
 //  - claude.png: real Claude starburst, recolored white
 //  - openai.svg: OpenAI (ChatGPT) logo, LobeHub icons-static-svg 1.95.0,
 //    drawn white for the menubar

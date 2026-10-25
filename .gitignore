@@ -8,3 +8,5 @@ CLAUDE.md
 # Local screenshot tooling (docs/CAPTURE.md)
 docs/CAPTURE.md
 scripts/capture/
+# Side material (screenshots, recordings): not part of the build
+Resources/

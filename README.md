@@ -69,4 +69,4 @@ open -a /Applications/AISubsUsage-MenuBar.app --args --demo   # demo mode: fake 
 
 MIT No Attribution (MIT-0) — see [LICENSE](LICENSE): use it however you like, no credit needed. Not affiliated with Anthropic, OpenAI or Figma; product names and logos belong to their owners.
 
-`Resources/openai.svg` comes from [LobeHub Icons](https://github.com/lobehub/lobe-icons) (`@lobehub/icons-static-svg` 1.95.0), MIT License, © LobeHub.
+`Assets/openai.svg` comes from [LobeHub Icons](https://github.com/lobehub/lobe-icons) (`@lobehub/icons-static-svg` 1.95.0), MIT License, © LobeHub.

@@ -18,7 +18,7 @@ app:
 	cp packaging/Info.plist $(BUILD_DIR)/$(APP_NAME).app/Contents/Info.plist
 	cp packaging/AppIcon.icns $(BUILD_DIR)/$(APP_NAME).app/Contents/Resources/AppIcon.icns
 	echo -n "APPL????" > $(BUILD_DIR)/$(APP_NAME).app/Contents/PkgInfo
-	cp -R Resources/*.png Resources/*.svg $(BUILD_DIR)/$(APP_NAME).app/Contents/Resources/ 2>/dev/null || true
+	cp -R Assets/*.png Assets/*.svg $(BUILD_DIR)/$(APP_NAME).app/Contents/Resources/ 2>/dev/null || true
 	@echo "Built $(BUILD_DIR)/$(APP_NAME).app (run 'make install' to copy to /Applications)"
 
 install: app
