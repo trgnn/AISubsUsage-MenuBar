@@ -2,6 +2,8 @@
 
 macOS menubar app (AppKit `NSStatusItem`, no SwiftUI — builds with Command Line Tools alone) showing OpenAI (ChatGPT/Codex) + Claude + Figma subscription usage at a glance.
 
+<img src="docs/images/menu.png" width="482" alt="Dropdown with two Claude accounts, one ChatGPT account and one Figma plan, each showing its usage and time until reset">
+
 Unlike scrapers, it calls the same OAuth-protected endpoints the CLIs use — no separate login, no API keys:
 
 - OpenAI: `GET https://chatgpt.com/backend-api/wham/usage` with `~/.codex/auth.json` (`codex login`)
@@ -58,6 +60,11 @@ open -a /Applications/AISubsUsage-MenuBar.app --args --demo   # demo mode: fake 
   - OpenAI: 5-hour / weekly windows (detected via `limit_window_seconds`), per-model caps, banked resets
   - Figma: monthly + daily seat AI credits per plan, with remaining count
   - Time until each limit resets, auto-refresh every 60s, manual Refresh (⌘R)
+
+<p>
+  <img src="docs/images/accounts.png" width="49%" alt="Accounts submenu: show an account in the dropdown or the menu bar, Move Up, Move Down">
+  <img src="docs/images/display.png" width="49%" alt="Display submenu: Show provider icons, Show % signs, Show empty accounts, Wide separators">
+</p>
 
 ## Notes
 

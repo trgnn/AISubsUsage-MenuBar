@@ -10,3 +10,5 @@ docs/CAPTURE.md
 scripts/capture/
 # Side material (screenshots, recordings): not part of the build
 Resources/
+# Local hand-off notes
+HANDOFF.md
