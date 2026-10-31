@@ -53,6 +53,8 @@ open -a /Applications/AISubsUsage-MenuBar.app --args --demo   # demo mode: fake 
 
 ## What it shows
 
+<img src="docs/images/menu.png" width="458" alt="Dropdown with two Claude accounts, one ChatGPT account and one Figma plan, each showing its usage and time until reset">
+
 - Menubar: one value per visible account, in your order (default Claude sessions, then OpenAI, then Figma plans); consecutive same-provider values share one icon. Provider glyphs shown by default, toggleable.
 - Options: Open at Login (via SMAppService), Display ▸ (Show provider icons, Show % signs, Show empty accounts, Wide separators — each individually toggleable), Accounts ▸ to show/hide each subscription and reorder it (Move Up / Move Down, one order shared by the menubar and the dropdown; default Claude, OpenAI, Figma, Figma plans biggest quota first)
 - Dropdown: one section per account in the same order, headed by the provider's colour icon and the account name with its plan:
