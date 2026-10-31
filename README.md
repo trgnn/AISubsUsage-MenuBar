@@ -2,7 +2,8 @@
 
 macOS menubar app (AppKit `NSStatusItem`, no SwiftUI — builds with Command Line Tools alone) showing OpenAI (ChatGPT/Codex) + Claude + Figma subscription usage at a glance.
 
-<img src="docs/images/menu.png" width="482" alt="Dropdown with two Claude accounts, one ChatGPT account and one Figma plan, each showing its usage and time until reset">
+
+https://github.com/user-attachments/assets/8f3cadcb-bcd5-4ca4-8ca3-227fdfdfaf8a
 
 Unlike scrapers, it calls the same OAuth-protected endpoints the CLIs use — no separate login, no API keys:
 
