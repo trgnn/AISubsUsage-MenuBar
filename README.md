@@ -49,6 +49,7 @@ make test        # unit tests (Swift Testing): parsing, plan names, ordering, co
 make check       # tests + release bundle + scan for secrets / personal data before pushing
 AISUBS_FORCE_CLAUDE_CODE=1 swift run AISubsUsageMenuBar --test   # headless fetch, Claude Code path
 open -a /Applications/AISubsUsage-MenuBar.app --args --demo   # demo mode: fake accounts, separate settings, no logins read
+tools/tag-release.sh v1.1 "Short description"   # set the app version, commit, annotated tag (never pushes)
 ```
 
 ## What it shows
