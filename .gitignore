@@ -4,7 +4,7 @@ build/
 *.xcodeproj/
 xcuserdata/
 .DS_Store
-CLAUDE.md
+AGENTS.md
 # Local screenshot tooling (docs/CAPTURE.md)
 docs/CAPTURE.md
 scripts/capture/
