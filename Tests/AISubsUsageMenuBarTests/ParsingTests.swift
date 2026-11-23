@@ -131,3 +131,52 @@ import Testing
         #expect(r.buckets.isEmpty)
     }
 }
+
+@Suite struct NotionParsing {
+    @Test func spacesNamedByEmailAndTier() throws {
+        let json = """
+        {"u1": {
+          "notion_user": {"u1": {"value": {"value": {"id": "u1", "email": "me@example.com"}}}},
+          "space": {
+            "s2": {"value": {"value": {"name": "Acme", "subscription_tier": "business"}}},
+            "s1": {"value": {"name": "Home", "subscription_tier": "free"}}
+          }
+        }}
+        """
+        let w = try NotionClient.parseSpaces(Data(json.utf8))
+        #expect(w.map(\.spaceID) == ["s1", "s2"])
+        #expect(w.map(\.displayName) == ["me@example.com · Home (Free)", "me@example.com · Acme (Business)"])
+        #expect(w.allSatisfy { $0.userID == "u1" })
+    }
+
+    @Test func allowanceAndCredits() throws {
+        let json = """
+        {"basicCredits": {"userUsage": 20, "userLimit": 50, "spaceUsage": 30, "spaceLimit": 50},
+         "premiumCredits": {"totalCreditBalance": 760, "perSource": {
+           "monthlyAllocated": {"usageTotal": 200, "limit": 800},
+           "stackedTrial": {"usageTotal": 40, "limit": 200},
+           "yearlyElastic": {"usageTotal": 0, "limit": 0}}}}
+        """
+        let r = try NotionClient.parseUsage(Data(json.utf8), spaceID: "s1")
+        #expect(r.buckets.map(\.title) == ["AI", "Credits"])
+        #expect(r.buckets[0].percent == 40)
+        #expect(r.buckets[0].detail == "30/50 left")
+        #expect(r.buckets[1].percent == 24)
+        #expect(r.buckets[1].detail == "760/1000 left")
+    }
+
+    @Test func overLimitCapsAndZeroLimitsSkipped() throws {
+        let json = """
+        {"basicCredits": {"userUsage": 9000, "userLimit": 50},
+         "premiumCredits": {"perSource": {"monthlyAllocated": {"usageTotal": 0, "limit": 0}}}}
+        """
+        let r = try NotionClient.parseUsage(Data(json.utf8), spaceID: "s1")
+        #expect(r.buckets.map(\.title) == ["AI"])
+        #expect(r.buckets[0].percent == 100)
+        #expect(r.buckets[0].detail == "0/50 left")
+    }
+
+    @Test func emptyResponse() throws {
+        #expect(try NotionClient.parseUsage(Data("{}".utf8), spaceID: "s1").buckets.isEmpty)
+    }
+}

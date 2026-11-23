@@ -11,7 +11,7 @@ bad() { print "FAIL  $1"; fail=1 }
 app=build/AISubsUsage-MenuBar.app
 plutil -lint -s packaging/Info.plist && ok "Info.plist is valid" || bad "Info.plist is invalid"
 [[ -x $app/Contents/MacOS/AISubsUsageMenuBar ]] && ok "app binary built" || bad "app binary missing"
-for f in AppIcon.icns claude.png figma.png openai.svg; do
+for f in AppIcon.icns claude.png figma.png openai.svg notion.svg; do
   [[ -f $app/Contents/Resources/$f ]] || bad "bundle is missing Resources/$f"
 done
 ok "bundle resources checked"

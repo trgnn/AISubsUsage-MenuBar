@@ -14,9 +14,6 @@ enum ClaudeWebSession {
         var orgID: String
     }
 
-    // Cached in memory so macOS only prompts once per launch.
-    private static var cachedPassword: String?
-
     /// All logged-in Claude Desktop sessions on this Mac (usually one).
     static func loadAll() throws -> [Session] {
         let support = FileManager.default.homeDirectoryForCurrentUser
@@ -53,61 +50,14 @@ enum ClaudeWebSession {
     private static func loadOne(dir: String, label: String) throws -> Session? {
         let db = dir + "/Cookies"
         guard FileManager.default.fileExists(atPath: db) else { return nil }
-        let password = try keychainPassword()
-        guard let skHex = sqliteHex(db: db, cookie: "sessionKey"),
-              let orgHex = sqliteHex(db: db, cookie: "lastActiveOrg"),
-              let sk = ChromiumCookie.decrypt(hex: skHex, password: password),
-              let org = ChromiumCookie.decrypt(hex: orgHex, password: password),
+        guard let password = try ChromiumCookie.keychainPassword(service: "Claude Safe Storage") else {
+            throw CredentialsStore.ClaudeCredsError.notFound
+        }
+        let cookies = Dictionary(ChromiumCookie.cookies(db: db, hosts: [".claude.ai"], password: password),
+                                 uniquingKeysWith: { first, _ in first })
+        guard let sk = cookies["sessionKey"], let org = cookies["lastActiveOrg"],
               sk.hasPrefix("sk-ant-"), !org.isEmpty
         else { return nil } // DB exists but no login cookies — not an error, skip it
         return Session(label: label, sessionKey: sk, orgID: org)
-    }
-
-    // MARK: - Keychain (via `security` CLI: same access path as the reference tools)
-
-    private static func keychainPassword() throws -> String {
-        if let p = cachedPassword { return p }
-        let out = Pipe()
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        proc.arguments = ["find-generic-password", "-s", "Claude Safe Storage", "-w"]
-        proc.standardOutput = out
-        proc.standardError = Pipe()
-        try proc.run()
-        proc.waitUntilExit()
-        guard proc.terminationStatus == 0 else {
-            // status 51 = user clicked Deny (or item missing and no prompt path)
-            if proc.terminationStatus == 51 { throw CredentialsStore.ClaudeCredsError.accessDenied }
-            throw CredentialsStore.ClaudeCredsError.notFound
-        }
-        let pw = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !pw.isEmpty else { throw CredentialsStore.ClaudeCredsError.notFound }
-        cachedPassword = pw
-        return pw
-    }
-
-    // MARK: - SQLite (via system `sqlite3` CLI; immutable snapshot avoids lock issues)
-
-    private static func sqliteHex(db: String, cookie: String) -> String? {
-        guard cookie.range(of: "^[A-Za-z0-9_]+$", options: .regularExpression) != nil else { return nil }
-        let sql = "SELECT hex(encrypted_value) FROM cookies WHERE host_key='.claude.ai' AND name='\(cookie)' LIMIT 1;"
-        if let hex = runSqlite(db: db, sql: sql), !hex.isEmpty { return hex }
-        // Fallback: immutable snapshot if the DB is locked by the running app
-        return runSqlite(db: "file:\(db)?immutable=1", sql: sql).flatMap { $0.isEmpty ? nil : $0 }
-    }
-
-    private static func runSqlite(db: String, sql: String) -> String? {
-        let out = Pipe()
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        proc.arguments = [db, sql]
-        proc.standardOutput = out
-        proc.standardError = Pipe()
-        guard (try? proc.run()) != nil else { return nil }
-        proc.waitUntilExit()
-        guard proc.terminationStatus == 0 else { return nil }
-        return String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

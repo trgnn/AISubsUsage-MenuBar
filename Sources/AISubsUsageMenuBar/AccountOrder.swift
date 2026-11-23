@@ -1,5 +1,5 @@
 // Ordering rules for Accounts ▸ Move Up/Down, kept free of AppKit so they
-// can be unit-tested. Keys are "claude:…", "openai", "figma:…".
+// can be unit-tested. Keys are "claude:…", "openai", "figma:…", "notion:…".
 enum AccountOrder {
     /// Saved keys first, in saved order; unknown (new) keys keep their
     /// default order after them.

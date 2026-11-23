@@ -13,16 +13,8 @@ enum CredentialsStore {
 
     enum ClaudeCredsError: LocalizedError {
         case notFound
-        case accessDenied
 
-        var errorDescription: String? {
-            switch self {
-            case .notFound:
-                return "No Claude login found — open Claude Desktop."
-            case .accessDenied:
-                return "Keychain access denied — click Always Allow, then Refresh."
-            }
-        }
+        var errorDescription: String? { "No Claude login found — open Claude Desktop." }
     }
 
     static var home: String { FileManager.default.homeDirectoryForCurrentUser.path }

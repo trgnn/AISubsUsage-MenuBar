@@ -100,12 +100,12 @@ import Testing
     }
 
     @Test func onlyMadeUpAccounts() {
-        let (claude, openAI, figma) = DemoData.accounts()
-        let names = claude.map(\.displayName) + figma.map(\.displayName) + [openAI.email ?? ""]
+        let (claude, openAI, figma, notion) = DemoData.accounts()
+        let names = claude.map(\.displayName) + figma.map(\.displayName) + notion.map(\.displayName) + [openAI.email ?? ""]
         for name in names where name.contains("@") {
             #expect(name.contains("@example.com"), "\(name)")
         }
-        #expect(!claude.isEmpty && !figma.isEmpty && !openAI.buckets.isEmpty)
+        #expect(!claude.isEmpty && !figma.isEmpty && !notion.isEmpty && !openAI.buckets.isEmpty)
     }
 
     @Test func separateSettingsDomain() {

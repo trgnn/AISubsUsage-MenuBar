@@ -5,6 +5,7 @@ import AppKit
 //  - openai.svg: OpenAI (ChatGPT) logo, LobeHub icons-static-svg 1.95.0,
 //    drawn white for the menubar
 //  - figma.png: F mark, drawn white from the official path data
+//  - notion.svg: Notion logo, LobeHub icons-static-svg 1.95.0, drawn white
 // Shown as-is (already white, transparent background) — no template,
 // no code-drawn fallback.
 
@@ -16,7 +17,20 @@ enum ProviderIcons {
     }
 
     static func openAI() -> NSImage? {
-        guard let svg = bundled(named: "openai", ext: "svg") else { return nil }
+        whiteSVG(named: "openai")
+    }
+
+    static func figma() -> NSImage? {
+        bundled(named: "figma")
+    }
+
+    static func notion() -> NSImage? {
+        whiteSVG(named: "notion")
+    }
+
+    /// Black LobeHub SVG redrawn white for the menubar.
+    private static func whiteSVG(named name: String) -> NSImage? {
+        guard let svg = bundled(named: name, ext: "svg") else { return nil }
         return NSImage(size: NSSize(width: 64, height: 64), flipped: false) { r in
             fit(svg, in: r)
             NSColor.white.set()
@@ -25,13 +39,9 @@ enum ProviderIcons {
         }
     }
 
-    static func figma() -> NSImage? {
-        bundled(named: "figma")
-    }
-
     /// Dropdown icon, 16×16 in colour: Claude starburst tinted brand orange,
-    /// OpenAI mark as a template (black/white with the menu), Figma "F" drawn
-    /// in its five brand colours.
+    /// OpenAI and Notion marks as templates (black/white with the menu),
+    /// Figma "F" drawn in its five brand colours.
     static func menuIcon(_ provider: String) -> NSImage? {
         let box = NSSize(width: 16, height: 16)
         switch provider {
@@ -43,8 +53,8 @@ enum ProviderIcons {
                 r.fill(using: .sourceAtop)
                 return true
             }
-        case "openai":
-            guard let glyph = bundled(named: "openai", ext: "svg") else { return nil }
+        case "openai", "notion":
+            guard let glyph = bundled(named: provider, ext: "svg") else { return nil }
             let img = NSImage(size: box, flipped: false) { r in fit(glyph, in: r); return true }
             img.isTemplate = true
             return img

@@ -2,8 +2,9 @@ import AppKit
 import ServiceManagement
 
 // AppKit-only menubar app (builds with Command Line Tools — no SwiftUI macros).
-// One section per account (Claude sessions, OpenAI, Figma plans), in the
-// user's order (Accounts ▸ Move Up/Down; default Claude, OpenAI, Figma).
+// One section per account (Claude sessions, OpenAI, Figma plans, Notion
+// workspaces), in the user's order (Accounts ▸ Move Up/Down; default Claude,
+// OpenAI, Figma, Notion).
 // Menubar shows every 5h value side by side, same order.
 
 /// One account row, provider-agnostic, for ordering.
@@ -11,12 +12,14 @@ private enum Entry {
     case claude(AnthropicClient.Account)
     case openai
     case figma(FigmaClient.Account)
+    case notion(NotionClient.Account)
 
     var key: String {
         switch self {
         case .claude(let a): return a.key
         case .openai: return "openai"
         case .figma(let a): return a.key
+        case .notion(let a): return a.key
         }
     }
 
@@ -25,6 +28,7 @@ private enum Entry {
         case .claude: return "claude"
         case .openai: return "openai"
         case .figma: return "figma"
+        case .notion: return "notion"
         }
     }
 }
@@ -35,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var openAI: OpenAIClient.Result?
     private var claudeAccounts: [AnthropicClient.Account] = []
     private var figmaAccounts: [FigmaClient.Account] = []
+    private var notionAccounts: [NotionClient.Account] = []
     private var openAIError: String?
     private var lastUpdated: Date?
     private var isLoading = false
@@ -85,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         set { defaults.set(newValue, forKey: wideSeparatorsKey) }
     }
 
-    /// Account keys ("claude:…", "openai", "figma:…") hidden from the dropdown
+    /// Account keys ("claude:…", "openai", "figma:…", "notion:…") hidden from the dropdown
     /// sections via Accounts ▸. Independent of the menubar.
     private var hiddenFromDropdown: Set<String> {
         get { Set(defaults.stringArray(forKey: hiddenKey) ?? []) }
@@ -113,9 +118,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Every account, saved order first; unknown (new) accounts keep the
-    /// default Claude, OpenAI, Figma order after them.
+    /// default Claude, OpenAI, Figma, Notion order after them.
     private func orderedEntries() -> [Entry] {
         let defaults = claudeAccounts.map(Entry.claude) + [.openai] + figmaAccounts.map(Entry.figma)
+            + notionAccounts.map(Entry.notion)
         return AccountOrder.sorted(defaults, key: \.key, saved: accountOrder)
     }
 
@@ -164,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func refresh(full: Bool) {
         guard !isLoading else { return }
         if DemoData.isEnabled {
-            (claudeAccounts, openAI, figmaAccounts) = DemoData.accounts()
+            (claudeAccounts, openAI, figmaAccounts, notionAccounts) = DemoData.accounts()
             openAIError = nil
             lastUpdated = Date()
             render()
@@ -178,11 +184,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }()
             async let cTask: [AnthropicClient.Account] = await AnthropicClient.fetchAll(refreshOrgs: full)
             async let fTask: [FigmaClient.Account] = await FigmaClient.fetchAll()
+            async let nTask: [NotionClient.Account] = await NotionClient.fetchAll()
             let (oVal, oErr) = await oTask
             self.openAI = oVal
             self.openAIError = oVal == nil ? oErr : nil
             self.claudeAccounts = await cTask
             self.figmaAccounts = await fTask
+            self.notionAccounts = await nTask
             self.lastUpdated = Date()
             self.isLoading = false
             self.render()
@@ -203,6 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case .claude(let a): icon = ProviderIcons.claude(); buckets = a.result?.buckets
             case .openai: icon = ProviderIcons.openAI(); buckets = openAI?.buckets
             case .figma(let a): icon = ProviderIcons.figma(); buckets = a.result?.buckets
+            case .notion(let a): icon = ProviderIcons.notion(); buckets = a.result?.buckets
             }
             return (e.provider, showIcons ? icon : nil, menubarPercent(buckets).map { fmtPercent($0) })
         }
@@ -318,6 +327,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(header("Figma", provider: "figma"))
             menu.addItem(info(loading ? "Loading…" : "No Figma login found — open Figma Desktop."))
         }
+        if notionAccounts.isEmpty {
+            menu.addItem(header("Notion", provider: "notion"))
+            menu.addItem(info(loading ? "Loading…" : "No Notion login found — open Notion."))
+        }
 
         // One section per account in user order, headed by its provider icon
         // and name (no separators between sections). Hidden accounts simply
@@ -357,18 +370,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     menu.addItem(info("Plan \(openAI?.plan.map(Formatters.planName) ?? "?") — no usage windows reported."))
                 }
             case .figma(let a):
-                if let buckets = a.result?.buckets, !buckets.isEmpty {
-                    for b in buckets { menu.addItem(bucketItem(b)) }
-                } else if let err = a.error {
-                    menu.addItem(info(err))
-                } else {
-                    menu.addItem(info("Connected — no usage windows reported."))
-                }
+                addBuckets(a.result?.buckets, error: a.error, to: menu)
+            case .notion(let a):
+                addBuckets(a.result?.buckets, error: a.error, to: menu)
             }
         }
         let items = menu.items
         menu.removeAllItems()
         return items
+    }
+
+    /// Bucket rows, else the error, else "no usage windows" (Figma, Notion).
+    private func addBuckets(_ buckets: [UsageBucket]?, error: String?, to menu: NSMenu) {
+        if let buckets, !buckets.isEmpty {
+            for b in buckets { menu.addItem(bucketItem(b)) }
+        } else if let error {
+            menu.addItem(info(error))
+        } else {
+            menu.addItem(info("Connected — no usage windows reported."))
+        }
     }
 
     /// All section rows stacked in one view (one menu item).
@@ -450,6 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .claude(let a): return a.displayName
         case .openai: return (openAI?.email ?? "OpenAI") + planSuffix(openAI?.plan)
         case .figma(let a): return a.displayName
+        case .notion(let a): return a.displayName
         }
     }
 
@@ -625,6 +646,13 @@ if CommandLine.arguments.contains("--test") {
                 print("FIGMA [\(a.displayName)] " + r.buckets.map { "\($0.title)=\(Formatters.percent($0.percent)) reset=\(Formatters.countdown(to: $0.resetsAt))" }.joined(separator: " | "))
             } else {
                 print("FIGMA [\(a.displayName)] FAILED: \(a.error ?? "?")")
+            }
+        }
+        for a in await NotionClient.fetchAll() {
+            if let r = a.result {
+                print("NOTION [\(a.displayName)] " + r.buckets.map { "\($0.title)=\(Formatters.percent($0.percent)) \($0.detail ?? "")" }.joined(separator: " | "))
+            } else {
+                print("NOTION [\(a.displayName)] FAILED: \(a.error ?? "?")")
             }
         }
         sem.signal()

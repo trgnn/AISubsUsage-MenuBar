@@ -12,12 +12,13 @@ enum DemoData {
     /// default so the item fits beside the notch.
     static let settings: UserDefaults = {
         let d = UserDefaults(suiteName: "com.aisubsusage.menubar.demo") ?? .standard
-        d.register(defaults: ["hiddenFromBarAccounts": ["claude:me", "figma:design"]])
+        d.register(defaults: ["hiddenFromBarAccounts": ["claude:me", "figma:design", "notion:acme"]])
         return d
     }()
 
     static func accounts(now: Date = Date())
-        -> (claude: [AnthropicClient.Account], openAI: OpenAIClient.Result, figma: [FigmaClient.Account])
+        -> (claude: [AnthropicClient.Account], openAI: OpenAIClient.Result, figma: [FigmaClient.Account],
+            notion: [NotionClient.Account])
     {
         let h: TimeInterval = 3600, d: TimeInterval = 86400
         func b(_ id: String, _ t: String, _ p: Double, _ r: TimeInterval, _ detail: String? = nil) -> UsageBucket {
@@ -37,6 +38,9 @@ enum DemoData {
             resetCredits: nil, creditsText: nil, rawAllowed: nil, limitReached: nil)
         let figma = [FigmaClient.Account(key: "figma:design", displayName: "me@example.com · Design", result: .init(
             buckets: [b("figma-monthly", "Monthly", 19, 9 * d + 4 * h, "2418/3000 left")], monthlyTotal: 3000), error: nil)]
-        return (claude, openAI, figma)
+        let notion = [NotionClient.Account(key: "notion:acme", displayName: "me@example.com · Acme (Business)", result: .init(
+            buckets: [UsageBucket(id: "notion-credits", title: "Credits", percent: 24, resetsAt: nil, detail: "760/1000 left")]),
+            error: nil)]
+        return (claude, openAI, figma, notion)
     }
 }

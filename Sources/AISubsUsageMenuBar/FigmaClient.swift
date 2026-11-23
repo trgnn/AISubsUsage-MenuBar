@@ -246,8 +246,6 @@ enum FigmaClient {
         }
     }
 
-    private static var cachedPassword: String?
-
     /// One scoped session per logged-in Figma user, newest profile first.
     /// The authn cookie maps userID -> token; scoping it to a single entry
     /// pins the API to that account (dead tokens 401 and get skipped later).
@@ -258,13 +256,15 @@ enum FigmaClient {
         let dirs = ((try? FileManager.default.contentsOfDirectory(atPath: base)) ?? [])
             .filter { $0.hasPrefix("v") }.sorted(by: >)
         if dirs.isEmpty { throw UsageError.notSignedIn("No Figma login found — open Figma Desktop.") }
-        let password = try keychainPassword()
+        guard let password = try ChromiumCookie.keychainPassword(service: "Figma Safe Storage") else {
+            throw UsageError.notSignedIn("No Figma login found — open Figma Desktop.")
+        }
         var sessions: [Session] = []
         var seen = Set<String>()
         for dir in dirs {
-            let db = base + "/" + dir + "/Cookies"
-            guard FileManager.default.fileExists(atPath: db) else { continue }
-            guard let parts = cookieParts(db: db, password: password), !parts.isEmpty else { continue }
+            let parts = ChromiumCookie.cookies(db: base + "/" + dir + "/Cookies",
+                                               hosts: ["www.figma.com", ".figma.com"], password: password)
+            guard !parts.isEmpty else { continue }
             let others = parts.filter { $0.0 != "__Host-figma.authn" }
             if let authn = parts.first(where: { $0.0 == "__Host-figma.authn" })?.1,
                let map = try? JSONDecoder().decode([String: String].self,
@@ -290,76 +290,13 @@ enum FigmaClient {
         return sessions
     }
 
-    /// All decrypted www.figma.com cookies as (name, value) pairs.
-    private static func cookieParts(db: String, password: String) -> [(String, String)]? {
-        guard let rows = sqliteRows(db: db), !rows.isEmpty else { return nil }
-        var parts: [(String, String)] = []
-        for (name, hex) in rows {
-            guard let value = ChromiumCookie.decrypt(hex: hex, password: password), !value.isEmpty else { continue }
-            parts.append((name, value))
-        }
-        return parts.isEmpty ? nil : parts
-    }
-
     /// `{"uid":"token"}` percent-encoded like the stored cookie value.
-    private static func singleEntryAuthn(userID: String, token: String) -> String {        let json = "{\"\(userID)\":\"\(token)\"}"
+    private static func singleEntryAuthn(userID: String, token: String) -> String {
+        let json = "{\"\(userID)\":\"\(token)\"}"
         return json.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? json
     }
 
     private static func urlDecoded(_ s: String) -> String {
         s.removingPercentEncoding ?? s
-    }
-
-    private static func sqliteRows(db: String) -> [(String, String)]? {
-        guard let dbQ = db.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
-        // Plain snapshot first, immutable snapshot fallback if the app holds a lock.
-        let sql = "SELECT name, hex(encrypted_value) FROM cookies WHERE host_key IN ('www.figma.com','.figma.com') AND length(encrypted_value) > 3;"
-        if let out = runSqlite(db: db, sql: sql) { return parse(out) }
-        if let out = runSqlite(db: "file:\(dbQ)?immutable=1", sql: sql) { return parse(out) }
-        return nil
-    }
-
-    private static func parse(_ out: String) -> [(String, String)] {
-        out.split(separator: "\n").compactMap { line -> (String, String)? in
-            let s = String(line)
-            guard let sep = s.firstIndex(of: "|") else { return nil }
-            return (String(s[..<sep]), String(s[s.index(after: sep)...]))
-        }
-    }
-
-    private static func runSqlite(db: String, sql: String) -> String? {
-        let out = Pipe()
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        proc.arguments = ["-separator", "|", db, sql]
-        proc.standardOutput = out
-        proc.standardError = Pipe()
-        guard (try? proc.run()) != nil else { return nil }
-        proc.waitUntilExit()
-        guard proc.terminationStatus == 0 else { return nil }
-        let s = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return s.isEmpty ? nil : s
-    }
-
-    private static func keychainPassword() throws -> String {
-        if let p = cachedPassword { return p }
-        let out = Pipe()
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        proc.arguments = ["find-generic-password", "-s", "Figma Safe Storage", "-w"]
-        proc.standardOutput = out
-        proc.standardError = Pipe()
-        try proc.run()
-        proc.waitUntilExit()
-        guard proc.terminationStatus == 0 else {
-            if proc.terminationStatus == 51 { throw CredentialsStore.ClaudeCredsError.accessDenied }
-            throw UsageError.notSignedIn("No Figma login found — open Figma Desktop.")
-        }
-        let pw = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !pw.isEmpty else { throw UsageError.notSignedIn("No Figma login found — open Figma Desktop.") }
-        cachedPassword = pw
-        return pw
     }
 }

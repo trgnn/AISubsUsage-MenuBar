@@ -1,6 +1,6 @@
 # AISubsUsage-MenuBar
 
-macOS menubar app (AppKit `NSStatusItem`, no SwiftUI — builds with Command Line Tools alone) showing OpenAI (ChatGPT/Codex) + Claude + Figma subscription usage at a glance.
+macOS menubar app (AppKit `NSStatusItem`, no SwiftUI — builds with Command Line Tools alone) showing OpenAI (ChatGPT/Codex) + Claude + Figma + Notion subscription usage at a glance.
 
 https://github.com/user-attachments/assets/c7296753-79d4-485a-a121-8698d06ade05
 
@@ -14,20 +14,23 @@ Unlike scrapers, it calls the same OAuth-protected endpoints the CLIs use — no
   1. `GET https://www.figma.com/api/shared_with_you/plan_filter_options` for plan list
   2. `GET https://www.figma.com/api/plans/{plan}/ai_credits/plan_user_balance_summary` for seat monthly/daily AI credits
   - One Desktop cookie jar can hold several Figma logins: the session is scoped per account (single-entry `authn`), and plans are filtered to the account's own teams (`/api/user/state`) — shared-file teams are skipped.
+- Notion, one section per workspace, `account email · workspace (tier)` as header (`~/Library/Application Support/Notion/Partitions/notion/Cookies`, decrypted via Keychain `Notion Safe Storage` — just be logged into the Notion app):
+  1. `POST https://app.notion.com/api/v3/getSpaces` for workspaces and tier
+  2. `POST https://app.notion.com/api/v3/getAIUsageEligibilityV2` for the included AI allowance and purchased Notion credits
 
 ## Requirements
 
 - macOS 14+
-- At least one of: Claude Desktop or Claude Code (`claude`) signed in, Codex app or CLI signed in (`codex login`), Figma Desktop signed in
+- At least one of: Claude Desktop or Claude Code (`claude`) signed in, Codex app or CLI signed in (`codex login`), Figma Desktop signed in, Notion app signed in
 - On first launch, macOS asks to let `security` read the matching Keychain item — click **Always Allow**
 
 ## Terms of use
 
-All three providers' terms restrict programmatic access, and Anthropic's Claude Code terms forbid third-party tools from collecting Claude.ai credentials or session tokens. This app reads your own logins locally, read-only, and only sends them to the provider they belong to — but use it at your own risk.
+All four providers' terms restrict programmatic access, and Anthropic's Claude Code terms forbid third-party tools from collecting Claude.ai credentials or session tokens. This app reads your own logins locally, read-only, and only sends them to the provider they belong to — but use it at your own risk.
 
 ## Privacy
 
-- Logins are read locally, kept in memory only, and sent only to the provider they belong to (claude.ai / api.anthropic.com, chatgpt.com, figma.com).
+- Logins are read locally, kept in memory only, and sent only to the provider they belong to (claude.ai / api.anthropic.com, chatgpt.com, figma.com, notion.com).
 - No analytics, no update checks, no server of its own. Read-only: it never changes or renews your logins.
 
 ## Install from source
@@ -56,12 +59,13 @@ tools/tag-release.sh v1.1 "Short description"   # set the app version, commit, a
 
 <img src="docs/images/menu.png" width="458" alt="Dropdown with two Claude accounts, one ChatGPT account and one Figma plan, each showing its usage and time until reset">
 
-- Menubar: one value per visible account, in your order (default Claude sessions, then OpenAI, then Figma plans); consecutive same-provider values share one icon. Provider glyphs shown by default, toggleable.
+- Menubar: one value per visible account, in your order (default Claude sessions, then OpenAI, Figma plans, Notion workspaces); consecutive same-provider values share one icon. Provider glyphs shown by default, toggleable.
 - Options: Open at Login (via SMAppService), Display ▸ (Show provider icons, Show % signs, Show empty accounts, Wide separators — each individually toggleable), Accounts ▸ to show/hide each subscription and reorder it (Move Up / Move Down, one order shared by the menubar and the dropdown; default Claude, OpenAI, Figma, Figma plans biggest quota first)
 - Dropdown: one section per account in the same order, headed by the provider's colour icon and the account name with its plan:
   - Claude: 5h session, weekly all-models, Sonnet/Opus and model-scoped weeklies, extra-usage (internal codename buckets are hidden)
   - OpenAI: 5-hour / weekly windows (detected via `limit_window_seconds`), per-model caps, banked resets
   - Figma: monthly + daily seat AI credits per plan, with remaining count
+  - Notion: included AI allowance (yours) and purchased Notion credits per workspace, with remaining count. The rolling 6-hour and monthly windows of paid plans aren't read yet (not seen on a free workspace)
   - Time until each limit resets, auto-refresh every 60s, manual Refresh (⌘R)
 
 <p>
@@ -79,4 +83,4 @@ tools/tag-release.sh v1.1 "Short description"   # set the app version, commit, a
 
 MIT No Attribution (MIT-0) — see [LICENSE](LICENSE): use it however you like, no credit needed. Not affiliated with Anthropic, OpenAI or Figma; product names and logos belong to their owners.
 
-`Assets/openai.svg` comes from [LobeHub Icons](https://github.com/lobehub/lobe-icons) (`@lobehub/icons-static-svg` 1.95.0), MIT License, © LobeHub.
+`Assets/openai.svg` and `Assets/notion.svg` come from [LobeHub Icons](https://github.com/lobehub/lobe-icons) (`@lobehub/icons-static-svg` 1.95.0), MIT License, © LobeHub.
